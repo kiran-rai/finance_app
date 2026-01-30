@@ -15,7 +15,6 @@ export default function Home() {
   // "Calculate", the projections will update automatically.
   const [inputs, setInputs] = useState({
     salary: 130000,                 // annual gross salary
-    federalRate: 0.25,             // combined federal + state tax rate (25%)
     paychecksPerMonth: 2,          // number of paychecks each month
     '401kRate': 0.06,              // 401k employee contribution rate (6%)
     employerMatchRate: 0.06,       // 401k employer match (6%)
@@ -82,7 +81,7 @@ export default function Home() {
   return (
     <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
       <h1>Personal Finance Planner</h1>
-      <p>Enter your financial assumptions below and click "Calculate" to see a month‑by‑month projection of your credit card, student loan, savings, car fund and cash flow.</p>
+      <p>Enter your financial assumptions below and click "Calculate" to see a month‑by‑month projection of your credit card, student loan, savings, car fund and cash flow. Taxes are computed automatically using the 2025 federal and Virginia tax brackets and standard deductions for a single filer.</p>
 
       <form
         onSubmit={(e) => {
@@ -97,11 +96,9 @@ export default function Home() {
             <input type="number" name="salary" value={inputs.salary} onChange={handleChange} min="0" step="1000" />
           </label>
         </div>
-        <div>
-          <label>Federal/State Tax Rate (%):<br />
-            <input type="number" name="federalRate" value={inputs.federalRate * 100} onChange={(e) => handleChange({ target: { name: 'federalRate', value: e.target.value / 100, type: 'number' } })} min="0" max="50" step="1" />
-          </label>
-        </div>
+        {/* Tax rate input removed in v1.1. Taxes are now computed automatically
+            based on 2025 federal and Virginia brackets and the standard
+            deduction. */}
 
         {/* Paychecks and contribution rates */}
         <div>
@@ -246,6 +243,76 @@ export default function Home() {
           </table>
         </div>
       )}
+
+      {/* Render simple line charts when projections exist */}
+      {projections && (
+        <div style={{ marginTop: '2rem' }}>
+          <h2>Charts</h2>
+          {/* Chart component defined inline below */}
+          <LineChart
+            data={projections.map((r) => r.loanEnding)}
+            title="Student Loan Balance"
+            color="steelblue"
+          />
+          <LineChart
+            data={projections.map((r) => r.savingsEnding)}
+            title="General Savings Balance"
+            color="green"
+          />
+          <LineChart
+            data={projections.map((r) => r.carFundEnding)}
+            title="Car Fund Balance"
+            color="orange"
+          />
+          <LineChart
+            data={projections.map((r) => r.cashRemaining)}
+            title="Cash Remaining Each Month"
+            color="red"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Simple line chart component. Accepts an array of numbers and renders
+ * an SVG line graph with a title. The chart scales automatically based
+ * on the min and max values in the data array. Colors can be customized.
+ *
+ * @param {Object} props
+ * @param {number[]} props.data - series of numeric values
+ * @param {string} props.title - title of the chart
+ * @param {string} props.color - stroke color for the line
+ */
+function LineChart({ data, title, color }) {
+  const width = 600;
+  const height = 200;
+  if (!data || data.length === 0) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  // Build path string
+  const points = data.map((val, idx) => {
+    const x = (idx / (data.length - 1)) * width;
+    const y = height - ((val - min) / range) * height;
+    return [x, y];
+  });
+  const path = points.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
+  // Generate axis labels for min and max
+  return (
+    <div style={{ marginBottom: '1.5rem' }}>
+      <h3>{title}</h3>
+      <svg width={width} height={height} style={{ border: '1px solid #ccc', background: '#f9f9f9' }}>
+        <path d={path} fill="none" stroke={color} strokeWidth="2" />
+        {/* Horizontal axis line */}
+        <line x1="0" y1={height} x2={width} y2={height} stroke="#aaa" strokeWidth="1" />
+        {/* Vertical axis line */}
+        <line x1="0" y1="0" x2="0" y2={height} stroke="#aaa" strokeWidth="1" />
+        {/* Min and max labels */}
+        <text x="4" y={12} fontSize="10" fill="#666">{max.toFixed(0)}</text>
+        <text x="4" y={height - 2} fontSize="10" fill="#666">{min.toFixed(0)}</text>
+      </svg>
     </div>
   );
 }
