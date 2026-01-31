@@ -111,7 +111,7 @@ export default function Home() {
     try {
       // Save previous projection for diffing
       setPreviousProjection(projections);
-      const rows = calculateProjection(inputs);
+      const rows = calculateProjection({ ...inputs, carFundGoal });
       setProjections(rows);
       // After calculating, compute change summary and goal evaluation
       if (rows && rows.length > 0) {
