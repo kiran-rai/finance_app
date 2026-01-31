@@ -31,7 +31,21 @@ export default function Home() {
     startDate: new Date('2026-02-01'),
     additionalSavings: 0,
     carFundMonthly: 0,
-    debtStrategy: 'creditFirst'
+    debtStrategy: 'creditFirst',
+    // v1.5: car purchase and refinance defaults
+    carPurchaseDate: '',
+    carPurchasePrice: 0,
+    carFinanced: false,
+    carDownPayment: 0,
+    carLoanApr: 0.06,
+    carLoanTermMonths: 60,
+    carOngoingMonthly: 0,
+    refiDate: '',
+    refiApr: 0,
+    refiTermMonths: 0,
+    refiFeeRate: 0,
+    minCashBuffer: 0,
+    stopCarContributionAtGoal: false
   });
   // Projection results for the current run.
   const [projections, setProjections] = useState(null);
@@ -66,7 +80,8 @@ export default function Home() {
     contributions: true,
     goals: true,
     options: true,
-    scenarios: true
+    scenarios: true,
+    carRefi: false
   });
   // Change tracker summary
   const [changeSummary, setChangeSummary] = useState(null);
@@ -358,7 +373,13 @@ export default function Home() {
   return (
     <div style={{ backgroundColor: darkMode ? '#1e1e1e' : '#f9f9f9', color: darkMode ? '#f5f5f5' : '#333', minHeight: '100vh', padding: '2rem' }}>
       <h1>Personal Finance Planner</h1>
-      <p>This comprehensive tool projects your cash flow, debt payoff, savings and goals. Taxes are calculated using 2025 federal and Virginia brackets for a single filer. You can save scenarios, compare them, export to CSV and toggle dark mode.</p>
+      <p>
+        This comprehensive tool projects your cash flow, debt payoff, savings and goals. Taxes are
+        calculated using 2025 federal and Virginia brackets for a single filer. New in this version: you
+        can simulate a car purchase (with financing, down payment and ongoing costs), test a student loan
+        refinance, enforce a minimum cash buffer and optionally stop car fund contributions when you hit
+        your goal. You can also save scenarios, compare them, export to CSV and toggle dark mode.
+      </p>
 
       {/* Options Section: Dark mode toggle, CSV export, Calculate button */}
       <div style={{ marginBottom: '1rem' }}>
@@ -463,6 +484,64 @@ export default function Home() {
         </div>
       </Section>
 
+      {/* Car purchase & refinance section */}
+      <Section title="Car Purchase & Refinance" isOpen={sectionsOpen.carRefi} onToggle={() => toggleSection('carRefi')}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+          {/* Car purchase inputs */}
+          <label>Car Purchase Date (YYYY-MM)
+            <input
+              type="month"
+              name="carPurchaseDate"
+              value={inputs.carPurchaseDate ? (inputs.carPurchaseDate.toISOString().slice(0, 7)) : ''}
+              onChange={handleChange}
+            />
+          </label>
+          <label>Car Purchase Price (USD)
+            <input type="number" name="carPurchasePrice" value={inputs.carPurchasePrice} min="0" step="100" onChange={handleChange} />
+          </label>
+          <label>
+            <input type="checkbox" name="carFinanced" checked={inputs.carFinanced} onChange={handleChange} /> Finance Car Purchase
+          </label>
+          <label>Car Down Payment (USD)
+            <input type="number" name="carDownPayment" value={inputs.carDownPayment} min="0" step="100" onChange={handleChange} />
+          </label>
+          <label>Car Loan APR (%)
+            <input type="number" name="carLoanApr" value={inputs.carLoanApr * 100} min="0" max="50" step="0.5" onChange={(e) => handleChange({ target: { name: 'carLoanApr', value: e.target.value / 100, type: 'number' } })} />
+          </label>
+          <label>Car Loan Term (months)
+            <input type="number" name="carLoanTermMonths" value={inputs.carLoanTermMonths} min="0" step="1" onChange={handleChange} />
+          </label>
+          <label>Car Ongoing Monthly Cost (USD)
+            <input type="number" name="carOngoingMonthly" value={inputs.carOngoingMonthly} min="0" step="50" onChange={handleChange} />
+          </label>
+          {/* Refinance inputs */}
+          <label>Refinance Date (YYYY-MM)
+            <input
+              type="month"
+              name="refiDate"
+              value={inputs.refiDate ? (inputs.refiDate.toISOString().slice(0, 7)) : ''}
+              onChange={handleChange}
+            />
+          </label>
+          <label>Refinance APR (%)
+            <input type="number" name="refiApr" value={inputs.refiApr * 100} min="0" max="50" step="0.5" onChange={(e) => handleChange({ target: { name: 'refiApr', value: e.target.value / 100, type: 'number' } })} />
+          </label>
+          <label>Refinance Term (months)
+            <input type="number" name="refiTermMonths" value={inputs.refiTermMonths} min="0" step="1" onChange={handleChange} />
+          </label>
+          <label>Refinance Fee Rate (%)
+            <input type="number" name="refiFeeRate" value={inputs.refiFeeRate * 100} min="0" max="10" step="0.1" onChange={(e) => handleChange({ target: { name: 'refiFeeRate', value: e.target.value / 100, type: 'number' } })} />
+          </label>
+          {/* Rules engine: emergency fund buffer and stop car contributions */}
+          <label>Minimum Cash Buffer (USD)
+            <input type="number" name="minCashBuffer" value={inputs.minCashBuffer} min="0" step="100" onChange={handleChange} />
+          </label>
+          <label>
+            <input type="checkbox" name="stopCarContributionAtGoal" checked={inputs.stopCarContributionAtGoal} onChange={handleChange} /> Stop Car Fund When Goal Reached
+          </label>
+        </div>
+      </Section>
+
       <Section title="Scenarios" isOpen={sectionsOpen.scenarios} onToggle={() => toggleSection('scenarios')}>
         <div style={{ marginBottom: '1rem' }}>
           <input type="text" placeholder="New scenario name" value={scenarioName} onChange={(e) => setScenarioName(e.target.value)} />
@@ -551,14 +630,15 @@ export default function Home() {
           {/* Charts section */}
           <div>
             <h3>Charts</h3>
-            {/* Debt payoff timeline: credit card and student loan balances */}
+            {/* Debt payoff timeline: credit card, student loan and car loan balances */}
             <MultiLineChart
               dataSets={[
                 projections.map((r) => r.ccEnding),
-                projections.map((r) => r.loanEnding)
+                projections.map((r) => r.loanEnding),
+                projections.map((r) => r.carLoanEnding)
               ]}
-              labels={['Credit Card Balance', 'Student Loan Balance']}
-              colors={['#9b59b6', '#2980b9']}
+              labels={['Credit Card Balance', 'Student Loan Balance', 'Car Loan Balance']}
+              colors={['#9b59b6', '#2980b9', '#e74c3c']}
               title="Debt Payoff Timeline"
             />
             {/* Savings categories with goal band for cash savings */}
@@ -581,11 +661,13 @@ export default function Home() {
                 projections.map((r) => r.remittance),
                 projections.map((r) => r.ccPayment),
                 projections.map((r) => r.loanPayment),
+                projections.map((r) => r.carLoanPayment),
+                projections.map((r) => r.carOngoingCost),
                 projections.map((r) => r.carFundContribution),
                 projections.map((r) => r.cashSavingsContribution)
               ]}
-              labels={['Living', 'Remittance', 'CC Payment', 'Loan Payment', 'Car Fund', 'Cash Savings']}
-              colors={['#c0392b', '#d35400', '#8e44ad', '#2980b9', '#27ae60', '#f1c40f']}
+              labels={['Living', 'Remittance', 'CC Payment', 'Loan Payment', 'Car Loan Payment', 'Car Ongoing Cost', 'Car Fund', 'Cash Savings']}
+              colors={['#c0392b', '#d35400', '#8e44ad', '#2980b9', '#e74c3c', '#16a085', '#27ae60', '#f1c40f']}
               title="Monthly Cash Flow Breakdown"
             />
           </div>
