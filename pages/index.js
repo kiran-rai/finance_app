@@ -46,6 +46,10 @@ export default function Home() {
     refiFeeRate: 0,
     minCashBuffer: 0,
     stopCarContributionAtGoal: false
+    ,
+    // v1.6 additions
+    events: [],
+    optimizeLoanPayment: false
   });
   // Projection results for the current run.
   const [projections, setProjections] = useState(null);
@@ -81,7 +85,8 @@ export default function Home() {
     goals: true,
     options: true,
     scenarios: true,
-    carRefi: false
+    carRefi: false,
+    events: false
   });
   // Change tracker summary
   const [changeSummary, setChangeSummary] = useState(null);
@@ -114,6 +119,50 @@ export default function Home() {
         parsedValue = value;
       }
       return { ...prev, [name]: parsedValue };
+    });
+  }
+
+  /**
+   * Add a new timeline event. Pushes a blank event onto the inputs.events array.
+   */
+  function handleAddEvent() {
+    setInputs((prev) => {
+      const newEvents = prev.events ? [...prev.events] : [];
+      newEvents.push({ month: '', type: 'living', value: 0 });
+      return { ...prev, events: newEvents };
+    });
+  }
+
+  /**
+   * Update a specific property of a timeline event at the given index.
+   * @param {number} index - index of the event in the events array
+   * @param {string} key - property to update ('month', 'type', 'value')
+   * @param {any} val - new value
+   */
+  function handleEventChange(index, key, val) {
+    setInputs((prev) => {
+      const newEvents = prev.events ? [...prev.events] : [];
+      if (!newEvents[index]) return prev;
+      // For month fields we want to store the YYYY-MM string directly. For
+      // numeric values, ensure a number. For type, keep string.
+      let newValue = val;
+      if (key === 'value') {
+        newValue = parseFloat(val) || 0;
+      }
+      newEvents[index] = { ...newEvents[index], [key]: newValue };
+      return { ...prev, events: newEvents };
+    });
+  }
+
+  /**
+   * Remove a timeline event at the given index.
+   * @param {number} index
+   */
+  function handleRemoveEvent(index) {
+    setInputs((prev) => {
+      const newEvents = prev.events ? [...prev.events] : [];
+      newEvents.splice(index, 1);
+      return { ...prev, events: newEvents };
     });
   }
 
@@ -539,6 +588,41 @@ export default function Home() {
           <label>
             <input type="checkbox" name="stopCarContributionAtGoal" checked={inputs.stopCarContributionAtGoal} onChange={handleChange} /> Stop Car Fund When Goal Reached
           </label>
+        </div>
+      </Section>
+
+      {/* Timeline events & optimization section */}
+      <Section title="Events & Optimization" isOpen={sectionsOpen.events} onToggle={() => toggleSection('events')}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div>
+            <button onClick={handleAddEvent}>Add Event</button>
+          </div>
+          {inputs.events && inputs.events.length > 0 ? (
+            inputs.events.map((ev, idx) => (
+              <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', alignItems: 'center' }}>
+                <label>Event Month
+                  <input type="month" value={ev.month} onChange={(e) => handleEventChange(idx, 'month', e.target.value)} />
+                </label>
+                <label>Type
+                  <select value={ev.type} onChange={(e) => handleEventChange(idx, 'type', e.target.value)}>
+                    <option value="living">Living</option>
+                    <option value="remittance">Remittance</option>
+                  </select>
+                </label>
+                <label>New Value (USD)
+                  <input type="number" value={ev.value} min="0" step="50" onChange={(e) => handleEventChange(idx, 'value', e.target.value)} />
+                </label>
+                <button onClick={() => handleRemoveEvent(idx)}>Remove</button>
+              </div>
+            ))
+          ) : (
+            <p>No events defined.</p>
+          )}
+          <div>
+            <label>
+              <input type="checkbox" name="optimizeLoanPayment" checked={inputs.optimizeLoanPayment} onChange={handleChange} /> Optimize Loan Payment (allocate leftover cash)
+            </label>
+          </div>
         </div>
       </Section>
 
