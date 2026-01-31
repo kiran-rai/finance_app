@@ -167,6 +167,85 @@ export default function Home() {
   }
 
   /**
+   * Run a simple optimizer that adjusts loan extra payment, car fund monthly
+   * contribution and additional savings to meet the payoff date, car fund goal
+   * and savings goal. It runs an initial projection to estimate required
+   * contributions and updates the inputs accordingly before running the final
+   * projection. This is a heuristic approach and may not find an exact
+   * solution in complex scenarios.
+   */
+  function handleOptimize() {
+    try {
+      // Run baseline projection with current inputs to see current final values
+      const baseRows = calculateProjection({ ...inputs, carFundGoal });
+      if (!baseRows || baseRows.length === 0) {
+        alert('Unable to run optimizer: calculation failed.');
+        return;
+      }
+      // Determine months count and final balances
+      const monthsCount = baseRows.length;
+      const lastRow = baseRows[baseRows.length - 1];
+      // Compute months until payoff target
+      const payoffParts = inputs.loanPayoffDate.split('-');
+      const payoffDateObj = new Date(parseInt(payoffParts[0], 10), parseInt(payoffParts[1], 10) - 1, 1);
+      const startObj = inputs.startDate instanceof Date ? inputs.startDate : new Date(inputs.startDate);
+      let monthsToPay = ((payoffDateObj.getFullYear() - startObj.getFullYear()) * 12 + (payoffDateObj.getMonth() - startObj.getMonth())) + 1;
+      if (monthsToPay < 1) monthsToPay = monthsCount;
+      // Estimate required loan payment using PMT formula
+      const currentLoanBal = inputs.loanDebt;
+      const monthlyLoanRate = inputs.loanApr / 12;
+      // Compute baseline monthly payment from PMT
+      const baseMonthlyPayment = monthlyLoanRate === 0 ? currentLoanBal / monthsToPay : (monthlyLoanRate * currentLoanBal) / (1 - Math.pow(1 + monthlyLoanRate, -monthsToPay));
+      // Our calc uses monthlyLoanPayment + loanExtra; monthlyLoanPayment is computed internally from the payoff date. loanExtra = (required - monthlyLoanPayment)
+      // We cannot access internal monthlyLoanPayment here, so approximate: treat required payment as PMT and subtract (interest + optional) from baseline loanPayment by running pmt again.
+      // For simplicity, set loanExtra to zero and rely on PMT to compute correct payment; or compute difference between required and (currentMonthlyLoanPayment + currentLoanExtra). We'll approximate.
+      // Suggest an extra loan payment: approximate as the portion of the PMT
+      // that goes toward principal rather than interest. This is a rough
+      // estimate: total payment minus current interest accrual. Ensure non-negative.
+      let suggestedLoanExtra = Math.max(0, baseMonthlyPayment - (currentLoanBal * monthlyLoanRate));
+
+      // Compute car fund contribution needed to hit goal by purchase date if specified
+      let suggestedCarFundMonthly = inputs.carFundMonthly;
+      if (carFundGoal > 0) {
+        // Determine months until purchase or projection end
+        let monthsToCarGoal = monthsCount;
+        if (inputs.carPurchaseDate) {
+          const purchaseParts = inputs.carPurchaseDate instanceof Date ? [inputs.carPurchaseDate.getFullYear(), inputs.carPurchaseDate.getMonth() + 1] : inputs.carPurchaseDate.split('-');
+          const purchaseDateObj = inputs.carPurchaseDate instanceof Date ? inputs.carPurchaseDate : new Date(purchaseParts[0], parseInt(purchaseParts[1], 10) - 1, 1);
+          monthsToCarGoal = ((purchaseDateObj.getFullYear() - startObj.getFullYear()) * 12 + (purchaseDateObj.getMonth() - startObj.getMonth())) + 1;
+          if (monthsToCarGoal < 1) monthsToCarGoal = monthsCount;
+        }
+        const carFundRemaining = Math.max(0, carFundGoal - lastRow.carFundEnding);
+        suggestedCarFundMonthly = carFundRemaining > 0 ? carFundRemaining / monthsToCarGoal : 0;
+      }
+      // Compute additional savings required to meet minimum cash savings goal
+      let suggestedAdditionalSavings = inputs.additionalSavings;
+      const finalCash = lastRow.cashSavingsEnding;
+      if (savingsGoalMin > 0 && finalCash < savingsGoalMin) {
+        const diff = savingsGoalMin - finalCash;
+        suggestedAdditionalSavings = diff / monthsCount;
+      }
+      // Update inputs with suggested contributions
+      setInputs((prev) => ({
+        ...prev,
+        loanExtra: Math.round(suggestedLoanExtra * 100) / 100,
+        carFundMonthly: Math.round(suggestedCarFundMonthly * 100) / 100,
+        additionalSavings: Math.round(suggestedAdditionalSavings * 100) / 100
+      }));
+      // Run calculation with updated inputs
+      setPreviousProjection(projections);
+      const rows = calculateProjection({ ...inputs, loanExtra: suggestedLoanExtra, carFundMonthly: suggestedCarFundMonthly, additionalSavings: suggestedAdditionalSavings, carFundGoal });
+      setProjections(rows);
+      const summary = computeChangeSummary(previousProjection, rows);
+      setChangeSummary(summary);
+      alert('Optimizer has adjusted your contributions. Review the new values before proceeding.');
+    } catch (err) {
+      console.error('Error running optimizer:', err);
+      alert('An error occurred while optimizing the plan.');
+    }
+  }
+
+  /**
    * Run the projection with the current inputs, store previous run for
    * change tracking and update state. Also evaluate goal outcomes and
    * prepare change summary.
@@ -430,10 +509,11 @@ export default function Home() {
         your goal. You can also save scenarios, compare them, export to CSV and toggle dark mode.
       </p>
 
-      {/* Options Section: Dark mode toggle, CSV export, Calculate button */}
+      {/* Options Section: Dark mode toggle, Calculate, Export, Optimize */}
       <div style={{ marginBottom: '1rem' }}>
         <button onClick={handleToggleDark}>{darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}</button>
         <button onClick={handleCalculate} style={{ marginLeft: '1rem' }}>Calculate</button>
+        <button onClick={handleOptimize} style={{ marginLeft: '1rem' }}>Optimize Plan</button>
         <button onClick={handleExportCSV} style={{ marginLeft: '1rem' }}>Export CSV</button>
       </div>
 
@@ -607,6 +687,9 @@ export default function Home() {
                   <select value={ev.type} onChange={(e) => handleEventChange(idx, 'type', e.target.value)}>
                     <option value="living">Living</option>
                     <option value="remittance">Remittance</option>
+                    <option value="additionalSavings">Additional Savings</option>
+                    <option value="carFundMonthly">Car Fund</option>
+                    <option value="loanExtra">Loan Extra</option>
                   </select>
                 </label>
                 <label>New Value (USD)
